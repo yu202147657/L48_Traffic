@@ -1,4 +1,5 @@
 import math
+from abc import ABC, abstractmethod
 from logging import warning
 
 from numpy import random
@@ -34,10 +35,21 @@ class Flow:
         }
 
 
-class FlowStrategy:
-    # Default flow strategy creates one flow per route.
+class FlowStrategy(ABC):
+    @abstractmethod
     def gen_flows(self, route: List[Tuple[int, int]]) -> List[Flow]:
-        return [Flow(route)]
+        pass
+
+
+class UniformFlowStrategy(FlowStrategy):
+    """
+    Creates exactly one flow per route, all initialised with the same interval
+    """
+    def __init__(self, interval=5.0):
+        self._interval = interval
+
+    def gen_flows(self, route: List[Tuple[int, int]]) -> List[Flow]:
+        return [Flow(route, interval=self._interval)]
 
 
 class RandomFlowStrategy(FlowStrategy):
@@ -82,7 +94,36 @@ class CustomEndpointFlowStrategy(FlowStrategy):
             return [Flow(route, interval=self._default)]
 
 
-def graph_to_flow(g: Graph, strategy: FlowStrategy = FlowStrategy()) -> List[Dict]:
+class ManualFlowStrategy(FlowStrategy):
+    """
+    Takes a dictionary mapping routes defined by start/end pairs to flow intervals. Assumes flows are uniquely defined
+    by their start and end points.
+    """
+    def __init__(self, flows: Dict[Tuple[Tuple, Tuple], float]):
+        self._flows = flows
+
+    def gen_flows(self, route: List[Tuple[int, int]]) -> List[Flow]:
+        start, end = route[0], route[-1]
+        if (start, end) in self._flows:
+            return [Flow(route, interval=self._flows[(start, end)])]
+        return []
+
+
+class CompositeFlowStrategy(FlowStrategy):
+    """
+    Takes a list of flow strategies and combines them into one.
+    """
+    def __init__(self, strategies: List[FlowStrategy]):
+        self._strategies = strategies
+
+    def gen_flows(self, route: List[Tuple[int, int]]) -> List[Flow]:
+        flows = []
+        for strategy in self._strategies:
+            flows += strategy.gen_flows(route)
+        return flows
+
+
+def graph_to_flow(g: Graph, strategy: FlowStrategy = UniformFlowStrategy()) -> List[Dict]:
     paths = all_pairs_shortest_paths(g)
     flows = []
     for start in paths:
